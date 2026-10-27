@@ -1,0 +1,828 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FuegoAtlas · Dashboard de incendios</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface: #fcfcfb;
+    --ink: #0b0b0b;
+    --ink-2: #52514e;
+    --muted: #898781;
+    --grid: #e1e0d9;
+    --baseline: #c3c2b7;
+    --border: rgba(11, 11, 11, 0.10);
+    --series: #eb6834;
+    --series-wash: rgba(235, 104, 52, 0.10);
+    --series-soft: rgba(235, 104, 52, 0.35);
+    --series-strong: #7a2a10;
+    --brand: #1f3a2e;
+    --focus: #1c5cab;
+    --err: #b32323;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --page: #0d0d0d;
+      --surface: #1a1a19;
+      --ink: #f0efec;
+      --ink-2: #c3c2b7;
+      --muted: #898781;
+      --grid: #2c2c2a;
+      --baseline: #383835;
+      --border: rgba(255, 255, 255, 0.10);
+      --series: #d95926;
+      --series-wash: rgba(217, 89, 38, 0.14);
+      --series-soft: rgba(217, 89, 38, 0.38);
+      --series-strong: #f6b08a;
+      --focus: #6da7ec;
+      --err: #f08a8a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 15px;
+    line-height: 1.45;
+  }
+  button, select { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+  .wrap { max-width: 1280px; margin: 0 auto; padding: 0 20px 40px; }
+
+  /* Encabezado */
+  .topbar { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding: 18px 0; }
+  .brand { display: flex; align-items: center; gap: 12px; margin-right: auto; }
+  .brand svg { width: 46px; height: 46px; flex: none; }
+  .brand h1 { margin: 0; font-size: 20px; font-weight: 650; letter-spacing: -0.01em; }
+  .brand p { margin: 0; color: var(--ink-2); font-size: 13px; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .btn {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 7px 12px; cursor: pointer; font-size: 14px;
+  }
+  .btn:hover { background: var(--grid); }
+  .btn[hidden] { display: none; }
+
+  .banner {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 10px 14px; font-size: 14px; margin-bottom: 14px;
+  }
+  #status { font-size: 13px; color: var(--ink-2); min-height: 18px; margin: -6px 0 10px; }
+  #status.err { color: var(--err); }
+  #status:empty { min-height: 0; margin: 0; }
+
+  /* Filtros */
+  .filters {
+    display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-end;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 12px 14px; margin-bottom: 14px;
+  }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field label { font-size: 12px; color: var(--ink-2); }
+  .field select {
+    background: var(--page); border: 1px solid var(--border); border-radius: 8px;
+    padding: 7px 10px; min-width: 120px;
+  }
+  .chip {
+    display: none; align-items: center; gap: 8px; margin-left: auto;
+    background: var(--series-wash); border: 1px solid var(--series-soft);
+    border-radius: 999px; padding: 6px 12px; cursor: pointer; font-size: 14px;
+  }
+  .chip.on { display: inline-flex; }
+
+  /* Indicadores */
+  .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 14px; }
+  .kpi { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; min-width: 0; }
+  .kpi .l { font-size: 13px; color: var(--ink-2); }
+  .kpi .v { font-size: 28px; font-weight: 650; letter-spacing: -0.02em; margin-top: 2px; overflow-wrap: anywhere; }
+  .kpi .s { font-size: 13px; color: var(--ink-2); min-height: 18px; }
+  .kpi .s2 { font-size: 12.5px; color: var(--ink-2); }
+
+  /* Tarjetas */
+  .grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 12px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; min-width: 0; }
+  .card header { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+  .card h2 { margin: 0; font-size: 16px; font-weight: 650; }
+  .card .sub { font-size: 13px; color: var(--ink-2); margin: 0 0 8px; }
+  .card header .btn { margin-left: auto; padding: 4px 10px; font-size: 13px; }
+  .c7 { grid-column: span 7; } .c5 { grid-column: span 5; }
+  .c12 { grid-column: span 12; } .c6 { grid-column: span 6; }
+  .box { position: relative; }
+  #map { height: 460px; border-radius: 8px; border: 1px solid var(--border); }
+  .box.tall { height: 430px; } .box.mid { height: 260px; }
+
+  /* Tabla alternativa */
+  .tbl-wrap { max-height: 430px; overflow: auto; display: none; }
+  .tbl-wrap.on { display: block; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--grid); }
+  th { color: var(--ink-2); font-weight: 600; font-size: 12px; position: sticky; top: 0; background: var(--surface); }
+  td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
+  td button { background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; text-decoration-color: var(--baseline); }
+
+  /* Leyenda del mapa */
+  .legend {
+    background: var(--surface); color: var(--ink); border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 10px; font-size: 12px; line-height: 1.3;
+  }
+  .legend .bar { height: 8px; width: 150px; border-radius: 4px; margin: 4px 0; }
+  .legend .row { display: flex; justify-content: space-between; color: var(--ink-2); }
+  .legend .row2 { display: flex; align-items: center; gap: 6px; margin-top: 6px; color: var(--ink-2); }
+  .legend .hollow { width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid #898781; background: #fff; display: inline-block; }
+
+  details { margin-top: 14px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 10px 16px; }
+  summary { cursor: pointer; font-weight: 600; }
+  details p, details li { color: var(--ink-2); font-size: 14px; }
+  code { background: var(--grid); border-radius: 4px; padding: 1px 5px; font-size: 13px; }
+  .note { color: var(--ink-2); font-size: 13px; margin-top: 14px; }
+  .note p { margin: 0 0 6px; }
+
+  @media (max-width: 980px) {
+    .kpis { grid-template-columns: repeat(2, 1fr); }
+    .c7, .c5, .c6 { grid-column: span 12; }
+    .chip { margin-left: 0; }
+  }
+  @media (max-width: 520px) {
+    .wrap { padding: 0 12px 32px; }
+    .kpi .v { font-size: 24px; }
+    #map { height: 340px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="topbar">
+    <div class="brand">
+      <!-- Logo inventado: llama con un marcador de ubicación en el centro -->
+      <svg viewBox="0 0 64 64" role="img" aria-label="Logo de FuegoAtlas: una llama con un marcador de ubicación">
+        <defs>
+          <linearGradient id="llama" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#ffb23e"/>
+            <stop offset="1" stop-color="#e5391b"/>
+          </linearGradient>
+        </defs>
+        <rect width="64" height="64" rx="14" fill="#1f3a2e"/>
+        <path d="M12 55 C22 49 42 49 52 55" fill="none" stroke="#5fae86" stroke-width="1.6" stroke-linecap="round" opacity="0.7"/>
+        <path d="M32 7 C34 17 47 21 47 36 C47 46 40 53 32 53 C24 53 17 46 17 37 C17 30 21 26 25 22 C25 27 27 30 30 31 C28 23 29 14 32 7 Z" fill="url(#llama)"/>
+        <path d="M32 48 C27 42 25 40 25 37 A7 7 0 0 1 39 37 C39 40 37 42 32 48 Z" fill="#1f3a2e"/>
+        <circle cx="32" cy="37" r="2.6" fill="#ffd98a"/>
+      </svg>
+      <div>
+        <h1>FuegoAtlas</h1>
+        <p>Detecciones de calor por municipio · Bogotá, Cerros Orientales y municipios aledaños</p>
+      </div>
+    </div>
+    <div class="actions">
+      <button class="btn" id="btnCsv" type="button">Cargar otro CSV</button>
+      <button class="btn" id="btnRestaurar" type="button" hidden>Volver a los datos originales</button>
+      <input type="file" id="fileCsv" accept=".csv,text/csv" hidden>
+    </div>
+  </div>
+
+  <div class="banner" id="banner" role="note"></div>
+  <div id="status" role="status" aria-live="polite"></div>
+
+  <section class="filters" aria-label="Filtros">
+    <div class="field"><label for="fDesde">Desde (año)</label><select id="fDesde"></select></div>
+    <div class="field"><label for="fHasta">Hasta (año)</label><select id="fHasta"></select></div>
+    <div class="field">
+      <label for="fTemp">Temporada</label>
+      <select id="fTemp">
+        <option value="all">Todo el año</option>
+        <option value="dry">Temporada seca (dic–mar)</option>
+        <option value="rest">Resto del año (abr–nov)</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="fTop">Municipios en el ranking</label>
+      <select id="fTop">
+        <option value="5">Top 5</option>
+        <option value="8">Top 8</option>
+        <option value="10" selected>Top 10</option>
+        <option value="15">Top 15</option>
+        <option value="999">Todos los afectados</option>
+      </select>
+    </div>
+    <button class="btn" id="btnReset" type="button">Reiniciar filtros</button>
+    <button class="chip" id="chip" type="button" aria-label="Quitar la selección de municipio"></button>
+  </section>
+
+  <section class="kpis" aria-label="Indicadores">
+    <div class="kpi">
+      <div class="l">Detecciones de calor</div>
+      <div class="v" id="kTotal">—</div>
+      <div class="s" id="kTotalS"></div>
+      <div class="s2" id="kTotalS2" title="Total del CSV de la zona de estudio: solo cuenta lo que cae dentro del rectángulo de estudio, por eso puede ser menor que la suma de los municipios completos."></div>
+    </div>
+    <div class="kpi"><div class="l">Municipios con detecciones</div><div class="v" id="kMuni">—</div><div class="s" id="kMuniS"></div></div>
+    <div class="kpi"><div class="l">Municipio más afectado</div><div class="v" id="kTop">—</div><div class="s" id="kTopS"></div></div>
+    <div class="kpi"><div class="l">Mes del año con más detecciones</div><div class="v" id="kMes">—</div><div class="s" id="kMesS"></div></div>
+  </section>
+
+  <main class="grid">
+    <section class="card c7">
+      <header><h2>Mapa de afectación por municipio</h2></header>
+      <p class="sub">El tamaño y el tono del círculo crecen con las detecciones. Haga clic en un círculo para filtrar los gráficos.</p>
+      <div id="map" role="region" aria-label="Mapa de municipios con círculos proporcionales a las detecciones de calor"></div>
+    </section>
+
+    <section class="card c5">
+      <header>
+        <h2>Municipios más afectados</h2>
+        <button class="btn" id="btnTabla" type="button" aria-pressed="false">Ver tabla</button>
+      </header>
+      <p class="sub">Detecciones en el periodo filtrado. Clic en una barra para seleccionar.</p>
+      <div class="box tall" id="boxRank"><canvas id="cRank" role="img" aria-label="Gráfico de barras con los municipios con más detecciones"></canvas></div>
+      <div class="tbl-wrap" id="tblWrap">
+        <table>
+          <thead><tr><th>Municipio</th><th>Departamento</th><th class="n">Detecciones</th><th class="n">%</th><th class="n" title="Meses con al menos una detección">Meses</th></tr></thead>
+          <tbody id="tblBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card c12">
+      <header><h2 id="tMes">Evolución mensual</h2></header>
+      <p class="sub">Detecciones por mes en el periodo y la temporada filtrados. La mayoría de los meses no registra detecciones.</p>
+      <div class="box mid"><canvas id="cMes" role="img" aria-label="Barras con las detecciones por mes"></canvas></div>
+    </section>
+
+    <section class="card c6">
+      <header><h2 id="tAnio">Total por año</h2></header>
+      <p class="sub">Detecciones sumadas en cada año del periodo.</p>
+      <div class="box mid"><canvas id="cAnio" role="img" aria-label="Barras con el total de detecciones por año"></canvas></div>
+    </section>
+
+    <section class="card c6">
+      <header><h2 id="tEst">Patrón estacional</h2></header>
+      <p class="sub">Promedio anual por mes del año. Los meses de la temporada elegida van en tono pleno.</p>
+      <div class="box mid"><canvas id="cEst" role="img" aria-label="Barras con el promedio de detecciones por mes del año"></canvas></div>
+    </section>
+  </main>
+
+  <details>
+    <summary>¿Cómo cargar otros datos?</summary>
+    <p>Cargue un CSV con una fila por municipio y mes, como el que exporta el cuaderno de Colab:</p>
+    <ul>
+      <li><code>municipio</code>, <code>fecha</code> (formato <code>AAAA-MM</code>) y <code>detecciones</code>: obligatorias.</li>
+      <li><code>departamento</code>, <code>lat</code> y <code>lon</code>: opcionales. Sin coordenadas, el municipio aparece en los gráficos pero no en el mapa.</li>
+      <li>Acepta separador coma o punto y coma. El botón <b>Volver a los datos originales</b> restaura los datos incluidos en este archivo.</li>
+    </ul>
+  </details>
+
+  <div class="note">
+    <p><b>Cómo leer las cifras.</b> Cada unidad es un píxel de ~1 km con actividad térmica detectada en un día (satélite MODIS, confianza ≥ 50 %). No siempre es un incendio forestal: puede ser una quema agrícola u otra fuente de calor, y los incendios pequeños pueden no detectarse.</p>
+    <p><b>Mapa.</b> Cada círculo está en el centroide del municipio. El de Bogotá D.C. queda al sur de la ciudad porque su polígono incluye la zona rural.</p>
+    <p><b>Totales.</b> El total del rectángulo de estudio es menor que la suma de los municipios porque varios municipios se extienden fuera de él.</p>
+  </div>
+</div>
+
+<script id="datos" type="application/json">{"fuente":"detecciones_municipios.csv + detecciones_mensuales_zona.csv","meses":["2015-01","2015-02","2015-03","2015-04","2015-05","2015-06","2015-07","2015-08","2015-09","2015-10","2015-11","2015-12","2016-01","2016-02","2016-03","2016-04","2016-05","2016-06","2016-07","2016-08","2016-09","2016-10","2016-11","2016-12","2017-01","2017-02","2017-03","2017-04","2017-05","2017-06","2017-07","2017-08","2017-09","2017-10","2017-11","2017-12","2018-01","2018-02","2018-03","2018-04","2018-05","2018-06","2018-07","2018-08","2018-09","2018-10","2018-11","2018-12","2019-01","2019-02","2019-03","2019-04","2019-05","2019-06","2019-07","2019-08","2019-09","2019-10","2019-11","2019-12","2020-01","2020-02","2020-03","2020-04","2020-05","2020-06","2020-07","2020-08","2020-09","2020-10","2020-11","2020-12","2021-01","2021-02","2021-03","2021-04","2021-05","2021-06","2021-07","2021-08","2021-09","2021-10","2021-11","2021-12","2022-01","2022-02","2022-03","2022-04","2022-05","2022-06","2022-07","2022-08","2022-09","2022-10","2022-11","2022-12","2023-01","2023-02","2023-03","2023-04","2023-05","2023-06","2023-07","2023-08","2023-09","2023-10","2023-11","2023-12","2024-01","2024-02","2024-03","2024-04","2024-05","2024-06","2024-07","2024-08","2024-09","2024-10","2024-11","2024-12","2025-01","2025-02","2025-03","2025-04","2025-05","2025-06","2025-07","2025-08","2025-09","2025-10","2025-11","2025-12"],"municipios":[{"n":"Bojaca","d":"Cundinamarca","la":4.68674,"lo":-74.33696,"v":[0,0,0,0,0,0,0,0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,4,0,0,0,0,0,0,0,0,0,0,0,13,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]},{"n":"Cajica","d":"Cundinamarca","la":4.91312,"lo":-74.05256,"v":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]},{"n":"Caqueza","d":"Cundinamarca","la":4.3871,"lo":-73.95695,"v":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3,8,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,7,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]},{"n":"Chia","d":"Cundinamarca","la":4.84468,"lo":-74.05861,"v":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]},{"n":"Chipaque","d":"Cundinamarca","la":4.41483,"lo":-74.07521,"v":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]},{"n":"Choachi","d":"Cundinamarca","la":4.56684,"lo":-73.93932,"v":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]},{"n":"Cota","d":"Cundinamarca","la":4.77603,"lo":-74.14351,"v":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,0,0,0,0,0,0,0,0,0,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,0,0,0,0,0,0,0,0,0,0]},{"n":"El Calvario","d":"Meta","la":4.35365,"lo":-73.74356,"v":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]},{"n":"Facatativa","d":"Cundinamarca","la":4.81954,"lo":-74.35887,"v":[0,0,0,0,0,0,0,0,0,0,0,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]},{"n":"Fomeque","d":"Cundinamarca","la":4.51488,"lo":-73.8063,"v":[0,0,6,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,6,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,6,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]},{"n":"Funza","d":"Cundinamarca","la":4.7304,"lo":-74.21798,"v":[0,0,0,0,0,0,0,0,0,0,0,0,6,0,0,0,0,0,0,0,0,0,3,0,0,0,0,0,0,0,0,0,0,0,0,0,9,0,0,0,0,0,0,0,0,0,6,0,0,0,0,0,0,0,0,0,0,0,0,0,0,10,0,0,0,0,0,0,0,0,0,0,9,0,0,0,0,0,0,0,0,0,0,0,6,0,0,0,0,0,0,0,0,0,0,0,6,8,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]},{"n":"Gachancipa","d":"Cundinamarca","la":4.98649,"lo":-73.90006,"v":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]},{"n":"Gacheta","d":"Cundinamarca","la":4.85339,"lo":-73.67304,"v":[0,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,8,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]},{"n":"Guasca","d":"Cundinamarca","la":4.79545,"lo":-73.8668,"v":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]},{"n":"Guatavita","d":"Cundinamarca","la":4.91105,"lo":-73.84001,"v":[0,0,0,0,0,0,0,0,0,0,0,16,0,3,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,17,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]},{"n":"Junin","d":"Cundinamarca","la":4.68759,"lo":-73.71109,"v":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]},{"n":"La Calera","d":"Cundinamarca","la":4.68686,"lo":-73.93593,"v":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]},{"n":"Madrid","d":"Cundinamarca","la":4.75513,"lo":-74.27729,"v":[0,0,0,0,0,0,0,0,0,0,0,0,3,0,0,0,0,0,0,0,0,0,6,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,5,0,0,0,0,0,0,0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0,3,0,0,0,0,0,0,0,0,0,0,0,7,4,0,0,0,0,0,0,12,0,0,0,0,0,0,0,0,0,0,0,11,0,0,0,0,0,3,0,0,0,0,0,0,0,0,0]},{"n":"Mosquera","d":"Cundinamarca","la":4.65811,"lo":-74.25126,"v":[0,0,0,0,0,0,0,0,0,0,0,6,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,16,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]},{"n":"San Francisco","d":"Cundinamarca","la":4.94294,"lo":-74.28449,"v":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]},{"n":"Santafe De Bogota D.c.","d":"Cundinamarca","la":4.28831,"lo":-74.21462,"v":[0,4,0,0,0,0,0,0,0,0,0,0,0,0,3,0,0,0,0,0,0,0,0,0,0,6,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,6,0,0,0,0,0,0,0,0,0,0,0,6,0,0,0,0,0,0,0,0,0,7,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,9,0,6,0,0,0,0,0,6,3,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,5,0]},{"n":"Sesquile","d":"Cundinamarca","la":4.98817,"lo":-73.8004,"v":[0,0,0,0,0,0,0,0,0,0,0,0,0,3,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]},{"n":"Sibate","d":"Cundinamarca","la":4.4488,"lo":-74.28272,"v":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]},{"n":"Soacha","d":"Cundinamarca","la":4.52441,"lo":-74.27832,"v":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,7,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,9,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]},{"n":"Sopo","d":"Cundinamarca","la":4.87169,"lo":-73.98659,"v":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]},{"n":"Subachoque","d":"Cundinamarca","la":4.92513,"lo":-74.19676,"v":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,9,0,0,0,0,0,0,0,0,0,0,0]},{"n":"Supata","d":"Cundinamarca","la":5.04452,"lo":-74.24801,"v":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]},{"n":"Tabio","d":"Cundinamarca","la":4.93511,"lo":-74.10195,"v":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]},{"n":"Tenjo","d":"Cundinamarca","la":4.82313,"lo":-74.16596,"v":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3,0,0,0,0,0,0,0,0,0,0,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,4,0,0,0,0,0,0,0,0,0,0]},{"n":"Tocancipa","d":"Cundinamarca","la":4.94797,"lo":-73.94817,"v":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,8,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]},{"n":"Ubaque","d":"Cundinamarca","la":4.48439,"lo":-73.9968,"v":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]},{"n":"Une","d":"Cundinamarca","la":4.34189,"lo":-74.06204,"v":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,6,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]},{"n":"Zipaquira","d":"Cundinamarca","la":5.02632,"lo":-74.0417,"v":[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]}],"zona":[0.0,0.0,6.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,19.5961,9.0,6.0,3.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,9.0,0.0,0.0,16.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,15.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,14.0,0.0,0.0,13.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,16.1176,21.0,6.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,11.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,26.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,9.0,15.0,21.0,0.0,0.0,0.0,5.0,0.0,15.0,9.1176,0.0,0.0,0.0,0.0,0.0,0.0,6.0,0.0,0.0,0.0,0.0,18.3529,0.0,0.0,0.0,9.0,6.0,2.0392,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0]}</script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  var MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  var MESES_L = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  var norm = function (s) {
+    return String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+  };
+  var fmt = function (n) { return Math.round(n).toLocaleString('es-CO'); };
+  var esc = function (s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  };
+
+  // Nombres con tildes para los municipios del archivo (el origen los trae sin tildes)
+  var NOMBRES = {}, DEPTO = {};
+  [
+    ['Bojaca', 'Bojacá'], ['Cajica', 'Cajicá'], ['Caqueza', 'Cáqueza'], ['Chia', 'Chía'],
+    ['Choachi', 'Choachí'], ['Facatativa', 'Facatativá'], ['Fomeque', 'Fómeque'],
+    ['Gachancipa', 'Gachancipá'], ['Gacheta', 'Gachetá'], ['Junin', 'Junín'],
+    ['Santafe De Bogota D.c.', 'Bogotá D.C.'], ['Sesquile', 'Sesquilé'], ['Sibate', 'Sibaté'],
+    ['Sopo', 'Sopó'], ['Supata', 'Supatá'], ['Tocancipa', 'Tocancipá'], ['Zipaquira', 'Zipaquirá']
+  ].forEach(function (p) { NOMBRES[norm(p[0])] = p[1]; });
+  DEPTO[norm('Santafe De Bogota D.c.')] = 'Distrito Capital';
+
+  // Rampa secuencial de un solo tono (naranja), de claro a oscuro
+  var RAMP = ['#f9c3a5', '#f3a077', '#eb6834', '#b8431a', '#7a2a10'];
+  function hex2rgb(h) { return [1, 3, 5].map(function (i) { return parseInt(h.slice(i, i + 2), 16); }); }
+  function ramp(t) {
+    t = Math.max(0, Math.min(1, t));
+    var x = t * (RAMP.length - 1);
+    var i = Math.min(Math.floor(x), RAMP.length - 2);
+    var f = x - i;
+    var a = hex2rgb(RAMP[i]), b = hex2rgb(RAMP[i + 1]);
+    return 'rgb(' + a.map(function (v, k) { return Math.round(v + (b[k] - v) * f); }).join(',') + ')';
+  }
+
+  // ---------- Estado ----------
+  var D = null;
+  var F = { y0: 0, y1: 0, season: 'all', top: 10 };
+  var selected = null;
+
+  function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+
+  // ---------- Datos incluidos en este archivo ----------
+  function loadEmbedded() {
+    var raw = JSON.parse(document.getElementById('datos').textContent);
+    var rows = [], names = {}, depts = {}, coords = {}, zone = {};
+    raw.municipios.forEach(function (m) {
+      var id = norm(m.n);
+      names[id] = NOMBRES[id] || m.n;
+      depts[id] = DEPTO[id] || m.d;
+      coords[id] = [m.la, m.lo];
+      m.v.forEach(function (v, i) {
+        var p = raw.meses[i].split('-');
+        rows.push({ id: id, y: parseInt(p[0], 10), mo: parseInt(p[1], 10), v: v });
+      });
+    });
+    raw.zona.forEach(function (v, i) {
+      var p = raw.meses[i].split('-');
+      zone[parseInt(p[0], 10) * 100 + parseInt(p[1], 10)] = v;
+    });
+    return { rows: rows, names: names, depts: depts, coords: coords, zone: zone, original: true, label: raw.fuente };
+  }
+
+  // ---------- CSV propio ----------
+  function splitLine(line, delim) {
+    var out = [], cur = '', q = false;
+    for (var i = 0; i < line.length; i++) {
+      var c = line[i];
+      if (c === '"') {
+        if (q && line[i + 1] === '"') { cur += '"'; i++; } else { q = !q; }
+      } else if (c === delim && !q) { out.push(cur); cur = ''; }
+      else { cur += c; }
+    }
+    out.push(cur);
+    return out.map(function (s) { return s.trim(); });
+  }
+  function parseCSV(text, fileName) {
+    text = text.replace(/^﻿/, '');
+    var lines = text.split(/\r?\n/).filter(function (l) { return l.trim(); });
+    if (lines.length < 2) throw new Error('El archivo no tiene filas de datos.');
+    var delim = lines[0].split(';').length > lines[0].split(',').length ? ';' : ',';
+    var head = splitLine(lines[0], delim).map(norm);
+    var ix = function (n) { return head.indexOf(n); };
+    var iM = ix('municipio');
+    var iF = ix('fecha') >= 0 ? ix('fecha') : ix('mes');
+    var iV = ix('detecciones') >= 0 ? ix('detecciones') : ix('valor');
+    if (iM < 0 || iF < 0 || iV < 0) throw new Error('Faltan columnas: se requieren municipio, fecha y detecciones.');
+    var iD = ix('departamento'), iLat = ix('lat'), iLon = ix('lon');
+
+    var acc = {}, names = {}, depts = {}, coords = {}, bad = 0;
+    for (var i = 1; i < lines.length; i++) {
+      var c = splitLine(lines[i], delim);
+      var name = c[iM];
+      var m = /^(\d{4})[-\/](\d{1,2})/.exec(c[iF] || '');
+      var v = parseFloat(String(c[iV]).replace(',', '.'));
+      if (!name || !m || isNaN(v)) { bad++; continue; }
+      var id = norm(name);
+      var y = +m[1], mo = +m[2];
+      if (mo < 1 || mo > 12) { bad++; continue; }
+      var key = id + '|' + y + '|' + mo;
+      acc[key] = (acc[key] || 0) + v;
+      if (!names[id]) names[id] = NOMBRES[id] || name;
+      if (!depts[id]) depts[id] = DEPTO[id] || ((iD >= 0 && c[iD]) ? c[iD] : '');
+      if (!coords[id]) {
+        var la = iLat >= 0 ? parseFloat(String(c[iLat]).replace(',', '.')) : NaN;
+        var lo = iLon >= 0 ? parseFloat(String(c[iLon]).replace(',', '.')) : NaN;
+        if (!isNaN(la) && !isNaN(lo)) coords[id] = [la, lo];
+      }
+    }
+    var rows = Object.keys(acc).map(function (k) {
+      var p = k.split('|');
+      return { id: p[0], y: +p[1], mo: +p[2], v: acc[k] };
+    });
+    if (!rows.length) throw new Error('No se encontró ninguna fila válida.');
+    var sinMapa = Object.keys(names).filter(function (id) { return !coords[id]; }).length;
+    return { rows: rows, names: names, depts: depts, coords: coords, zone: null, original: false,
+             label: fileName, bad: bad, sinMapa: sinMapa };
+  }
+
+  // ---------- Filtros y agregaciones ----------
+  function inSeason(mo) {
+    if (F.season === 'all') return true;
+    var dry = mo === 12 || mo <= 3;
+    return F.season === 'dry' ? dry : !dry;
+  }
+  function filt(sel) {
+    return D.rows.filter(function (r) {
+      return r.y >= F.y0 && r.y <= F.y1 && inSeason(r.mo) && (!sel || r.id === sel);
+    });
+  }
+  function totalsById(rows) {
+    var t = {};
+    rows.forEach(function (r) { t[r.id] = (t[r.id] || 0) + r.v; });
+    return t;
+  }
+  function nm(id) { return D.names[id] || id; }
+
+  // ---------- Mapa ----------
+  var map, markers, legendCtl;
+  function initMap() {
+    map = L.map('map', { scrollWheelZoom: true }).setView([4.70, -74.05], 10);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 18,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+    }).addTo(map);
+    markers = L.layerGroup().addTo(map);
+    legendCtl = L.control({ position: 'bottomright' });
+    legendCtl.onAdd = function () {
+      var d = L.DomUtil.create('div', 'legend');
+      d.innerHTML = '<div>Detecciones</div><div class="bar" style="background:linear-gradient(90deg,' +
+        RAMP.join(',') + ')"></div><div class="row"><span>Menos</span><span>Más</span></div>' +
+        '<div class="row2"><span class="hollow"></span><span>Sin detecciones</span></div>';
+      return d;
+    };
+    legendCtl.addTo(map);
+  }
+  function fitMap() {
+    var pts = Object.keys(D.coords).map(function (id) { return D.coords[id]; });
+    if (pts.length > 1) map.fitBounds(L.latLngBounds(pts).pad(0.15));
+    else if (pts.length === 1) map.setView(pts[0], 11);
+  }
+  function renderMap(tot) {
+    markers.clearLayers();
+    var all = Object.keys(D.coords);
+    var pos = all.filter(function (id) { return tot[id] > 0; });
+    var zero = all.filter(function (id) { return !(tot[id] > 0); });
+    var max = Math.max.apply(null, pos.map(function (id) { return tot[id]; }).concat([1]));
+    var sum = pos.reduce(function (a, id) { return a + tot[id]; }, 0) || 1;
+
+    // Municipios sin detecciones: punto hueco, para ubicarse en el territorio
+    zero.forEach(function (id) {
+      var isSel = id === selected;
+      var c = L.circleMarker(D.coords[id], {
+        radius: 5, color: isSel ? '#0b0b0b' : '#898781', weight: isSel ? 3 : 1.5,
+        fillColor: '#ffffff', fillOpacity: 0.7
+      });
+      c.bindTooltip('<b>' + esc(nm(id)) + '</b><br>Sin detecciones en el periodo', { sticky: true });
+      c.on('click', function () { select(id); });
+      c.addTo(markers);
+    });
+
+    // Municipios con detecciones: los más grandes primero, para que los pequeños queden encima
+    pos.sort(function (a, b) { return tot[b] - tot[a]; }).forEach(function (id) {
+      var v = tot[id], t = v / max;
+      var isSel = id === selected;
+      var c = L.circleMarker(D.coords[id], {
+        radius: 6 + 26 * Math.sqrt(t),
+        fillColor: ramp(t), fillOpacity: 0.82,
+        color: isSel ? '#0b0b0b' : '#ffffff', weight: isSel ? 3 : 2
+      });
+      c.bindTooltip('<b>' + esc(nm(id)) + '</b><br>' + fmt(v) + ' detecciones · ' + (100 * v / sum).toFixed(1) + ' %', { sticky: true });
+      c.on('click', function () { select(id); });
+      c.addTo(markers);
+    });
+  }
+
+  // ---------- Gráficos ----------
+  var chRank, chMes, chAnio, chEst;
+
+  var tipLabels = {
+    id: 'tipLabels',
+    afterDatasetsDraw: function (chart) {
+      var ctx = chart.ctx, meta = chart.getDatasetMeta(0), data = chart.data.datasets[0].data;
+      ctx.save();
+      ctx.fillStyle = css('--ink-2');
+      ctx.font = '12px system-ui, sans-serif';
+      ctx.textBaseline = 'middle';
+      meta.data.forEach(function (bar, i) {
+        ctx.fillText(fmt(data[i]), bar.x + 6, bar.y);
+      });
+      ctx.restore();
+    }
+  };
+
+  function baseOptions(extra) {
+    var o = {
+      maintainAspectRatio: false,
+      animation: { duration: 250 },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          displayColors: false, padding: 10, cornerRadius: 8, borderWidth: 1,
+          backgroundColor: css('--surface'), titleColor: css('--ink'),
+          bodyColor: css('--ink-2'), borderColor: css('--baseline')
+        }
+      },
+      scales: {
+        x: { grid: { color: css('--grid') }, border: { color: css('--baseline') }, ticks: { color: css('--muted') } },
+        y: { grid: { color: css('--grid') }, border: { display: false }, ticks: { color: css('--muted') }, beginAtZero: true }
+      }
+    };
+    if (extra) extra(o);
+    return o;
+  }
+
+  function initCharts() {
+    Chart.defaults.font.family = 'system-ui, -apple-system, "Segoe UI", sans-serif';
+
+    chRank = new Chart(document.getElementById('cRank'), {
+      type: 'bar',
+      data: { labels: [], datasets: [{ data: [], backgroundColor: [], borderRadius: { topRight: 4, bottomRight: 4 }, borderSkipped: 'start', maxBarThickness: 22 }] },
+      options: baseOptions(function (o) {
+        o.indexAxis = 'y';
+        o.layout = { padding: { right: 44 } };
+        o.scales.y.grid.display = false;
+        o.scales.x.ticks.precision = 0;
+        o.plugins.tooltip.callbacks = {
+          label: function (c) {
+            var meses = chRank.$meses ? chRank.$meses[c.dataIndex] : null;
+            return fmt(c.parsed.x) + ' detecciones' + (meses ? ' en ' + meses + (meses === 1 ? ' mes' : ' meses') : '');
+          }
+        };
+        o.onClick = function (e, els) {
+          if (els.length) select(chRank.$ids[els[0].index]);
+        };
+        o.onHover = function (e, els) { e.native.target.style.cursor = els.length ? 'pointer' : 'default'; };
+      }),
+      plugins: [tipLabels]
+    });
+
+    chMes = new Chart(document.getElementById('cMes'), {
+      type: 'bar',
+      data: { labels: [], datasets: [{ data: [], backgroundColor: css('--series'), borderRadius: { topLeft: 4, topRight: 4 }, borderSkipped: 'bottom', maxBarThickness: 24, categoryPercentage: 1, barPercentage: 0.85 }] },
+      options: baseOptions(function (o) {
+        o.interaction = { mode: 'index', intersect: false };
+        o.scales.x.grid.display = false;
+        o.scales.x.ticks.maxTicksLimit = 12;
+        o.scales.x.ticks.maxRotation = 0;
+        o.scales.y.ticks.precision = 0;
+        o.plugins.tooltip.callbacks = {
+          label: function (c) { return fmt(c.parsed.y) + ' detecciones'; }
+        };
+      })
+    });
+
+    chAnio = new Chart(document.getElementById('cAnio'), {
+      type: 'bar',
+      data: { labels: [], datasets: [{ data: [], backgroundColor: css('--series'), borderRadius: { topLeft: 4, topRight: 4 }, borderSkipped: 'bottom', maxBarThickness: 24 }] },
+      options: baseOptions(function (o) {
+        o.scales.x.grid.display = false;
+        o.scales.y.ticks.precision = 0;
+        o.plugins.tooltip.callbacks = {
+          label: function (c) { return fmt(c.parsed.y) + ' detecciones'; }
+        };
+      })
+    });
+
+    chEst = new Chart(document.getElementById('cEst'), {
+      type: 'bar',
+      data: { labels: MESES, datasets: [{ data: [], backgroundColor: [], borderRadius: { topLeft: 4, topRight: 4 }, borderSkipped: 'bottom', maxBarThickness: 24 }] },
+      options: baseOptions(function (o) {
+        o.scales.x.grid.display = false;
+        o.plugins.tooltip.callbacks = {
+          title: function (items) { return MESES_L[items[0].dataIndex]; },
+          label: function (c) { return c.parsed.y.toFixed(1) + ' detecciones por año (promedio)'; }
+        };
+      })
+    });
+  }
+
+  function applyTheme() {
+    [chRank, chMes, chAnio, chEst].forEach(function (ch) {
+      var o = ch.options;
+      ['x', 'y'].forEach(function (a) {
+        o.scales[a].ticks.color = css('--muted');
+        o.scales[a].grid.color = css('--grid');
+        if (a === 'x') o.scales[a].border.color = css('--baseline');
+      });
+      var t = o.plugins.tooltip;
+      t.backgroundColor = css('--surface'); t.titleColor = css('--ink');
+      t.bodyColor = css('--ink-2'); t.borderColor = css('--baseline');
+    });
+    chMes.data.datasets[0].backgroundColor = css('--series');
+    chAnio.data.datasets[0].backgroundColor = css('--series');
+  }
+
+  // ---------- Render ----------
+  function render() {
+    var rows = filt(null);
+    var tot = totalsById(rows);
+    var cnt = {};
+    rows.forEach(function (r) { if (r.v > 0) cnt[r.id] = (cnt[r.id] || 0) + 1; });
+    var ids = Object.keys(tot).filter(function (id) { return tot[id] > 0; })
+      .sort(function (a, b) { return tot[b] - tot[a]; });
+    var sum = ids.reduce(function (a, id) { return a + tot[id]; }, 0);
+
+    // Indicadores
+    document.getElementById('kTotal').textContent = sum ? fmt(sum) : '0';
+    document.getElementById('kTotalS').textContent = F.y0 + '–' + F.y1 + ' · suma de municipios';
+    var z2 = document.getElementById('kTotalS2');
+    if (D.zone) {
+      var zs = 0;
+      for (var zy = F.y0; zy <= F.y1; zy++) {
+        for (var zm = 1; zm <= 12; zm++) { if (inSeason(zm)) zs += D.zone[zy * 100 + zm] || 0; }
+      }
+      z2.textContent = 'Dentro del rectángulo de estudio: ' + fmt(zs);
+      z2.style.display = '';
+    } else { z2.style.display = 'none'; }
+    document.getElementById('kMuni').textContent = ids.length;
+    document.getElementById('kMuniS').textContent = 'de ' + Object.keys(D.names).length + ' en los datos';
+    document.getElementById('kTop').textContent = ids.length ? nm(ids[0]) : '—';
+    document.getElementById('kTopS').textContent = ids.length ? fmt(tot[ids[0]]) + ' detecciones · ' + (100 * tot[ids[0]] / sum).toFixed(1) + ' %' : '';
+    var porMes = new Array(12).fill(0);
+    rows.forEach(function (r) { porMes[r.mo - 1] += r.v; });
+    var pk = porMes.indexOf(Math.max.apply(null, porMes));
+    document.getElementById('kMes').textContent = sum ? MESES_L[pk].charAt(0).toUpperCase() + MESES_L[pk].slice(1) : '—';
+    document.getElementById('kMesS').textContent = sum ? fmt(porMes[pk]) + ' detecciones · ' + (100 * porMes[pk] / sum).toFixed(1) + ' %' : '';
+
+    // Selección
+    var chip = document.getElementById('chip');
+    if (selected) { chip.textContent = 'Municipio: ' + nm(selected) + '  ✕'; chip.classList.add('on'); }
+    else { chip.classList.remove('on'); }
+    var suf = selected ? ' · ' + nm(selected) : '';
+    document.getElementById('tMes').textContent = 'Evolución mensual' + suf;
+    document.getElementById('tAnio').textContent = 'Total por año' + suf;
+    document.getElementById('tEst').textContent = 'Patrón estacional' + suf;
+
+    // Mapa
+    renderMap(tot);
+
+    // Ranking
+    var top = ids.slice(0, F.top);
+    chRank.$ids = top;
+    chRank.$meses = top.map(function (id) { return cnt[id] || 0; });
+    chRank.data.labels = top.map(nm);
+    chRank.data.datasets[0].data = top.map(function (id) { return tot[id]; });
+    chRank.data.datasets[0].backgroundColor = top.map(function (id) {
+      return (selected && id !== selected) ? css('--series-soft') : (id === selected ? css('--series-strong') : css('--series'));
+    });
+    chRank.update();
+
+    // Tabla alternativa
+    var tb = document.getElementById('tblBody');
+    tb.innerHTML = '';
+    ids.forEach(function (id) {
+      var tr = document.createElement('tr');
+      var td1 = document.createElement('td'), b = document.createElement('button');
+      b.type = 'button'; b.textContent = nm(id); b.addEventListener('click', function () { select(id); });
+      td1.appendChild(b);
+      var td2 = document.createElement('td'); td2.textContent = D.depts[id] || '';
+      var td3 = document.createElement('td'); td3.className = 'n'; td3.textContent = fmt(tot[id]);
+      var td4 = document.createElement('td'); td4.className = 'n'; td4.textContent = (100 * tot[id] / sum).toFixed(1);
+      var td5 = document.createElement('td'); td5.className = 'n'; td5.textContent = cnt[id] || 0;
+      tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3); tr.appendChild(td4); tr.appendChild(td5);
+      tb.appendChild(tr);
+    });
+
+    // Serie mensual (respeta años, temporada y selección)
+    var sel = filt(selected);
+    var byYM = {};
+    sel.forEach(function (r) { byYM[r.y * 100 + r.mo] = (byYM[r.y * 100 + r.mo] || 0) + r.v; });
+    var labs = [], vals = [];
+    for (var y = F.y0; y <= F.y1; y++) {
+      for (var mo = 1; mo <= 12; mo++) {
+        if (!inSeason(mo)) continue;
+        labs.push(MESES[mo - 1] + ' ' + y);
+        vals.push(byYM[y * 100 + mo] || 0);
+      }
+    }
+    chMes.data.labels = labs; chMes.data.datasets[0].data = vals; chMes.update();
+
+    // Total por año
+    var byY = {};
+    sel.forEach(function (r) { byY[r.y] = (byY[r.y] || 0) + r.v; });
+    var ys = [];
+    for (var yy = F.y0; yy <= F.y1; yy++) ys.push(yy);
+    chAnio.data.labels = ys;
+    chAnio.data.datasets[0].data = ys.map(function (v) { return byY[v] || 0; });
+    chAnio.update();
+
+    // Patrón estacional (años y selección; todos los meses)
+    var anual = D.rows.filter(function (r) {
+      return r.y >= F.y0 && r.y <= F.y1 && (!selected || r.id === selected);
+    });
+    var sm = new Array(12).fill(0);
+    anual.forEach(function (r) { sm[r.mo - 1] += r.v; });
+    var nAnios = F.y1 - F.y0 + 1;
+    chEst.data.datasets[0].data = sm.map(function (v) { return v / nAnios; });
+    chEst.data.datasets[0].backgroundColor = sm.map(function (v, i) {
+      return inSeason(i + 1) ? css('--series') : css('--series-soft');
+    });
+    chEst.update();
+  }
+
+  function select(id) {
+    selected = (selected === id) ? null : id;
+    render();
+  }
+
+  // ---------- Carga de datos ----------
+  function setStatus(msg, err) {
+    var s = document.getElementById('status');
+    s.textContent = msg || ''; s.className = err ? 'err' : '';
+  }
+  function setData(d) {
+    D = d; selected = null;
+    var years = D.rows.map(function (r) { return r.y; });
+    var y0 = Math.min.apply(null, years), y1 = Math.max.apply(null, years);
+    var opts = '';
+    for (var y = y0; y <= y1; y++) opts += '<option value="' + y + '">' + y + '</option>';
+    document.getElementById('fDesde').innerHTML = opts;
+    document.getElementById('fHasta').innerHTML = opts;
+    document.getElementById('fDesde').value = y0;
+    document.getElementById('fHasta').value = y1;
+    F.y0 = y0; F.y1 = y1; F.season = 'all';
+    document.getElementById('fTemp').value = 'all';
+
+    var b = document.getElementById('banner');
+    var nMun = Object.keys(D.names).length;
+    if (D.original) {
+      b.innerHTML = '<b>Datos incluidos:</b> detecciones de calor NASA FIRMS (MODIS) procesadas en Google Earth Engine · ' +
+        nMun + ' municipios · ' + y0 + '–' + y1 + '.';
+    } else {
+      b.innerHTML = '<b>Datos cargados:</b> ' + esc(D.label) + ' · ' + nMun + ' municipios · ' + D.rows.length + ' registros mensuales.';
+    }
+    document.getElementById('btnRestaurar').hidden = D.original;
+    fitMap();
+    render();
+  }
+
+  function bind() {
+    document.getElementById('btnCsv').addEventListener('click', function () { document.getElementById('fileCsv').click(); });
+    document.getElementById('fileCsv').addEventListener('change', function (e) {
+      var f = e.target.files[0];
+      if (!f) return;
+      var rd = new FileReader();
+      rd.onload = function () {
+        try {
+          var d = parseCSV(String(rd.result), f.name);
+          setData(d);
+          var m = 'Archivo cargado.';
+          if (d.bad) m += ' Se omitieron ' + d.bad + ' filas inválidas.';
+          if (d.sinMapa) m += ' ' + d.sinMapa + ' municipio(s) sin coordenadas no aparecen en el mapa (agregue columnas lat y lon).';
+          setStatus(m, false);
+        } catch (err) {
+          setStatus('No se pudo leer el archivo: ' + err.message, true);
+        }
+        e.target.value = '';
+      };
+      rd.readAsText(f, 'utf-8');
+    });
+    document.getElementById('btnRestaurar').addEventListener('click', function () {
+      setStatus('', false); setData(loadEmbedded());
+    });
+    document.getElementById('fDesde').addEventListener('change', function (e) {
+      F.y0 = +e.target.value;
+      if (F.y0 > F.y1) { F.y1 = F.y0; document.getElementById('fHasta').value = F.y1; }
+      render();
+    });
+    document.getElementById('fHasta').addEventListener('change', function (e) {
+      F.y1 = +e.target.value;
+      if (F.y1 < F.y0) { F.y0 = F.y1; document.getElementById('fDesde').value = F.y0; }
+      render();
+    });
+    document.getElementById('fTemp').addEventListener('change', function (e) { F.season = e.target.value; render(); });
+    document.getElementById('fTop').addEventListener('change', function (e) { F.top = +e.target.value; render(); });
+    document.getElementById('btnReset').addEventListener('click', function () {
+      var years = D.rows.map(function (r) { return r.y; });
+      F.y0 = Math.min.apply(null, years); F.y1 = Math.max.apply(null, years);
+      F.season = 'all'; F.top = 10; selected = null;
+      document.getElementById('fDesde').value = F.y0; document.getElementById('fHasta').value = F.y1;
+      document.getElementById('fTemp').value = 'all'; document.getElementById('fTop').value = '10';
+      render();
+    });
+    document.getElementById('chip').addEventListener('click', function () { selected = null; render(); });
+    document.getElementById('btnTabla').addEventListener('click', function () {
+      var on = document.getElementById('tblWrap').classList.toggle('on');
+      document.getElementById('boxRank').style.display = on ? 'none' : '';
+      this.textContent = on ? 'Ver gráfico' : 'Ver tabla';
+      this.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    var mq = window.matchMedia('(prefers-color-scheme: dark)');
+    var onTheme = function () { applyTheme(); render(); };
+    if (mq.addEventListener) mq.addEventListener('change', onTheme);
+  }
+
+  // ---------- Inicio ----------
+  if (typeof L === 'undefined' || typeof Chart === 'undefined') {
+    setStatus('No se pudieron cargar las librerías del mapa y los gráficos. Revise su conexión a internet y recargue la página.', true);
+    return;
+  }
+  var inicial;
+  try { inicial = loadEmbedded(); }
+  catch (err) { setStatus('No se pudieron leer los datos incluidos en el archivo.', true); return; }
+  initMap();
+  initCharts();
+  bind();
+  setData(inicial);
+  setTimeout(function () { map.invalidateSize(); fitMap(); }, 150);
+})();
+</script>
+</body>
+</html>
